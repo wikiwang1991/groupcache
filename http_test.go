@@ -96,6 +96,9 @@ func TestHTTPPool(t *testing.T) {
 		if err := g.Get(context.TODO(), key, StringSink(&value)); err != nil {
 			t.Fatal(err)
 		}
+		if value[len(value)-1] == 0 {
+			value = value[:len(value)-1]
+		}
 		if suffix := ":" + key; !strings.HasSuffix(value, suffix) {
 			t.Errorf("Get(%q) = %q, want value ending in %q", key, value, suffix)
 		}

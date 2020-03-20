@@ -1,0 +1,11 @@
+namespace groupcachefb;
+
+table GetRequest {
+  group:string;
+  key:string; // not actually required/guaranteed to be UTF-8
+}
+
+table GetResponse {
+  value:[byte];
+  minute_qps:double;
+}

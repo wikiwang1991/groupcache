@@ -18,8 +18,6 @@ package groupcache
 
 import (
 	"errors"
-
-	"github.com/golang/protobuf/proto"
 )
 
 // A Sink receives data from a Get call.
@@ -33,10 +31,6 @@ type Sink interface {
 	// SetBytes sets the value to the contents of v.
 	// The caller retains ownership of v.
 	SetBytes(v []byte) error
-
-	// SetProto sets the value to the encoded version of m.
-	// The caller retains ownership of m.
-	SetProto(m proto.Message) error
 
 	// view returns a frozen view of the bytes for caching.
 	view() (ByteView, error)
@@ -92,16 +86,6 @@ func (s *stringSink) SetBytes(v []byte) error {
 	return s.SetString(string(v))
 }
 
-func (s *stringSink) SetProto(m proto.Message) error {
-	b, err := proto.Marshal(m)
-	if err != nil {
-		return err
-	}
-	s.v.b = b
-	*s.sp = string(b)
-	return nil
-}
-
 // ByteViewSink returns a Sink that populates a ByteView.
 func ByteViewSink(dst *ByteView) Sink {
 	if dst == nil {
@@ -132,15 +116,6 @@ func (s *byteViewSink) view() (ByteView, error) {
 	return *s.dst, nil
 }
 
-func (s *byteViewSink) SetProto(m proto.Message) error {
-	b, err := proto.Marshal(m)
-	if err != nil {
-		return err
-	}
-	*s.dst = ByteView{b: b}
-	return nil
-}
-
 func (s *byteViewSink) SetBytes(b []byte) error {
 	*s.dst = ByteView{b: cloneBytes(b)}
 	return nil
@@ -148,63 +123,6 @@ func (s *byteViewSink) SetBytes(b []byte) error {
 
 func (s *byteViewSink) SetString(v string) error {
 	*s.dst = ByteView{s: v}
-	return nil
-}
-
-// ProtoSink returns a sink that unmarshals binary proto values into m.
-func ProtoSink(m proto.Message) Sink {
-	return &protoSink{
-		dst: m,
-	}
-}
-
-type protoSink struct {
-	dst proto.Message // authoritative value
-	typ string
-
-	v ByteView // encoded
-}
-
-func (s *protoSink) view() (ByteView, error) {
-	return s.v, nil
-}
-
-func (s *protoSink) SetBytes(b []byte) error {
-	err := proto.Unmarshal(b, s.dst)
-	if err != nil {
-		return err
-	}
-	s.v.b = cloneBytes(b)
-	s.v.s = ""
-	return nil
-}
-
-func (s *protoSink) SetString(v string) error {
-	b := []byte(v)
-	err := proto.Unmarshal(b, s.dst)
-	if err != nil {
-		return err
-	}
-	s.v.b = b
-	s.v.s = ""
-	return nil
-}
-
-func (s *protoSink) SetProto(m proto.Message) error {
-	b, err := proto.Marshal(m)
-	if err != nil {
-		return err
-	}
-	// TODO(bradfitz): optimize for same-task case more and write
-	// right through? would need to document ownership rules at
-	// the same time. but then we could just assign *dst = *m
-	// here. This works for now:
-	err = proto.Unmarshal(b, s.dst)
-	if err != nil {
-		return err
-	}
-	s.v.b = b
-	s.v.s = ""
 	return nil
 }
 
@@ -232,14 +150,6 @@ func (s *allocBytesSink) setView(v ByteView) error {
 	}
 	s.v = v
 	return nil
-}
-
-func (s *allocBytesSink) SetProto(m proto.Message) error {
-	b, err := proto.Marshal(m)
-	if err != nil {
-		return err
-	}
-	return s.setBytesOwned(b)
 }
 
 func (s *allocBytesSink) SetBytes(b []byte) error {
@@ -281,14 +191,6 @@ type truncBytesSink struct {
 
 func (s *truncBytesSink) view() (ByteView, error) {
 	return s.v, nil
-}
-
-func (s *truncBytesSink) SetProto(m proto.Message) error {
-	b, err := proto.Marshal(m)
-	if err != nil {
-		return err
-	}
-	return s.setBytesOwned(b)
 }
 
 func (s *truncBytesSink) SetBytes(b []byte) error {

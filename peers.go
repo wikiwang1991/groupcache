@@ -21,12 +21,12 @@ package groupcache
 import (
 	"context"
 
-	pb "github.com/golang/groupcache/groupcachepb"
+	fb "github.com/wikiwang1991/groupcache/groupcachefb"
 )
 
-// ProtoGetter is the interface that must be implemented by a peer.
-type ProtoGetter interface {
-	Get(ctx context.Context, in *pb.GetRequest, out *pb.GetResponse) error
+// FlatGetter is the interface that must be implemented by a peer.
+type FlatGetter interface {
+	Get(ctx context.Context, in *fb.GetRequest, out *fb.GetResponse) error
 }
 
 // PeerPicker is the interface that must be implemented to locate
@@ -35,13 +35,13 @@ type PeerPicker interface {
 	// PickPeer returns the peer that owns the specific key
 	// and true to indicate that a remote peer was nominated.
 	// It returns nil, false if the key owner is the current peer.
-	PickPeer(key string) (peer ProtoGetter, ok bool)
+	PickPeer(key string) (peer FlatGetter, ok bool)
 }
 
 // NoPeers is an implementation of PeerPicker that never finds a peer.
 type NoPeers struct{}
 
-func (NoPeers) PickPeer(key string) (peer ProtoGetter, ok bool) { return }
+func (NoPeers) PickPeer(key string) (peer FlatGetter, ok bool) { return }
 
 var (
 	portPicker func(groupName string) PeerPicker

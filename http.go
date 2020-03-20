@@ -26,9 +26,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/golang/groupcache/consistenthash"
-	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/protobuf/proto"
+	flatbuffers "github.com/google/flatbuffers/go"
+	"github.com/wikiwang1991/groupcache/consistenthash"
+	fb "github.com/wikiwang1991/groupcache/groupcachefb"
 )
 
 const defaultBasePath = "/_groupcache/"
@@ -127,7 +127,7 @@ func (p *HTTPPool) Set(peers ...string) {
 	}
 }
 
-func (p *HTTPPool) PickPeer(key string) (ProtoGetter, bool) {
+func (p *HTTPPool) PickPeer(key string) (FlatGetter, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.peers.IsEmpty() {
@@ -173,14 +173,14 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write the value to the response body as a proto message.
-	body, err := proto.Marshal(&pb.GetResponse{Value: value})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/x-protobuf")
-	w.Write(body)
+	// Write the value to the response body as a flat message.
+	builder := flatbuffers.NewBuilder((len(value) + 0x11) & ^0xf)
+	valueOffset := builder.CreateByteVector(value)
+	fb.GetResponseStart(builder)
+	fb.GetResponseAddValue(builder, valueOffset)
+	builder.Finish(fb.GetResponseEnd(builder))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(builder.FinishedBytes())
 }
 
 type httpGetter struct {
@@ -192,12 +192,12 @@ var bufferPool = sync.Pool{
 	New: func() interface{} { return new(bytes.Buffer) },
 }
 
-func (h *httpGetter) Get(ctx context.Context, in *pb.GetRequest, out *pb.GetResponse) error {
+func (h *httpGetter) Get(ctx context.Context, in *fb.GetRequest, out *fb.GetResponse) error {
 	u := fmt.Sprintf(
 		"%v%v/%v",
 		h.baseURL,
-		url.QueryEscape(in.GetGroup()),
-		url.QueryEscape(in.GetKey()),
+		url.QueryEscape(string(in.Group())),
+		url.QueryEscape(string(in.Key())),
 	)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
@@ -223,9 +223,7 @@ func (h *httpGetter) Get(ctx context.Context, in *pb.GetRequest, out *pb.GetResp
 	if err != nil {
 		return fmt.Errorf("reading response body: %v", err)
 	}
-	err = proto.Unmarshal(b.Bytes(), out)
-	if err != nil {
-		return fmt.Errorf("decoding response body: %v", err)
-	}
+	buf := b.Bytes()
+	out.Init(buf, flatbuffers.GetUOffsetT(buf))
 	return nil
 }

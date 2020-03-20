@@ -32,9 +32,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/groupcache/lru"
-	"github.com/golang/groupcache/singleflight"
+	flatbuffers "github.com/google/flatbuffers/go"
+	fb "github.com/wikiwang1991/groupcache/groupcachefb"
+	"github.com/wikiwang1991/groupcache/lru"
+	"github.com/wikiwang1991/groupcache/singleflight"
 )
 
 // A Getter loads data for a key.
@@ -301,17 +302,21 @@ func (g *Group) getLocally(ctx context.Context, key string, dest Sink) (ByteView
 	return dest.view()
 }
 
-func (g *Group) getFromPeer(ctx context.Context, peer ProtoGetter, key string) (ByteView, error) {
-	req := &pb.GetRequest{
-		Group: &g.name,
-		Key:   &key,
-	}
-	res := &pb.GetResponse{}
+func (g *Group) getFromPeer(ctx context.Context, peer FlatGetter, key string) (ByteView, error) {
+	builder := flatbuffers.NewBuilder((len(g.name) + len(key) + 0x11) & ^0xf)
+	groupOffset := builder.CreateString(g.name)
+	keyOffset := builder.CreateString(key)
+	fb.GetRequestStart(builder)
+	fb.GetRequestAddGroup(builder, groupOffset)
+	fb.GetRequestAddKey(builder, keyOffset)
+	builder.Finish(fb.GetRequestEnd(builder))
+	req := fb.GetRootAsGetRequest(builder.Bytes, builder.Head())
+	res := &fb.GetResponse{}
 	err := peer.Get(ctx, req, res)
 	if err != nil {
 		return ByteView{}, err
 	}
-	value := ByteView{b: res.Value}
+	value := ByteView{b: res.Table().Bytes}
 	// TODO(bradfitz): use res.MinuteQps or something smart to
 	// conditionally populate hotCache.  For now just do it some
 	// percentage of the time.
